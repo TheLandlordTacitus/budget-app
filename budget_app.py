@@ -363,42 +363,113 @@ if not saldo_contenitore.empty:
 else:
     st.info("Non hai ancora movimenti.")
 
-# --- ANALISI PER TIPO ---
+# --- ANALISI PER TIPO (storiche) ---
 st.divider()
-st.subheader("📊 Analisi per Tipo (personalizzato)")
+st.subheader("📊 Analisi per Tipo (spese già sostenute)")
 
-# Spese - grafico a torta
+# Spese storiche - grafico a torta e barre
 spese_df = df[df["Importo"] < 0]
 if not spese_df.empty:
     spese_tipo = spese_df.groupby("Tipo")["Importo"].sum().abs().reset_index()
     
     col1, col2 = st.columns(2)
     with col1:
-        # Grafico a torta per le spese
         fig_spese_pie = px.pie(spese_tipo, values="Importo", names="Tipo",
-                               title="Spese per Tipo (%)",
+                               title="Spese Storiche per Tipo (%)",
                                hole=0.3, color_discrete_sequence=px.colors.sequential.Reds_r)
         st.plotly_chart(fig_spese_pie, use_container_width=True)
     with col2:
-        # Grafico a barre per le spese (come prima)
         fig_spese_bar = px.bar(spese_tipo, x="Tipo", y="Importo",
-                               title="Spese per Tipo (€)",
+                               title="Spese Storiche (€)",
                                color="Tipo", text_auto=True)
         st.plotly_chart(fig_spese_bar, use_container_width=True)
 else:
     st.info("Nessuna spesa registrata.")
 
-# Entrate - grafico a torta (come prima)
+# --- SPESE RICORRENTI FUTURE (prossimi 12 mesi) ---
+st.divider()
+st.subheader("📊 Spese Ricorrenti Future (programmate, nei prossimi 12 mesi)")
+
+def calcola_spese_ricorrenti_future(mesi=12):
+    oggi = datetime.now().date()
+    spese_future_per_tipo = {}
+    
+    for _, row in df_rec.iterrows():
+        if not row["Attiva"]:
+            continue
+        if row["TipoMovimento"] == "Entrata (+)" or row["Importo"] >= 0:
+            continue  # Solo spese (negative)
+        
+        if row["TipoRicorrenza"] == "Normale":
+            giorno = int(row["Giorno"])
+            count = 0
+            for mese_offset in range(1, mesi + 1):
+                anno = oggi.year
+                mese = oggi.month + mese_offset
+                while mese > 12:
+                    mese -= 12
+                    anno += 1
+                if giorno == 31:
+                    ultimo_giorno = calendar.monthrange(anno, mese)[1]
+                    giorno_effettivo = ultimo_giorno
+                else:
+                    ultimo_giorno = calendar.monthrange(anno, mese)[1]
+                    if giorno > ultimo_giorno:
+                        continue
+                    giorno_effettivo = giorno
+                count += 1
+            if count == 0:
+                continue
+            importo_totale = abs(row["Importo"]) * count
+            tipo = row["Tipo"] if row["Tipo"] else "Generico"
+            spese_future_per_tipo[tipo] = spese_future_per_tipo.get(tipo, 0) + importo_totale
+        
+        elif row["TipoRicorrenza"] == "Rate":
+            rate_pagate = row["RatePagate"]
+            rate_totali = row["RateTotali"]
+            rate_rimanenti = max(0, rate_totali - rate_pagate)
+            rate_nei_prossimi_mesi = min(rate_rimanenti, mesi)
+            if rate_nei_prossimi_mesi == 0:
+                continue
+            importo_rata = abs(row["Importo"]) / rate_totali
+            importo_totale = importo_rata * rate_nei_prossimi_mesi
+            tipo = row["Tipo"] if row["Tipo"] else "Generico"
+            spese_future_per_tipo[tipo] = spese_future_per_tipo.get(tipo, 0) + importo_totale
+    
+    if spese_future_per_tipo:
+        return pd.DataFrame(list(spese_future_per_tipo.items()), columns=["Tipo", "Importo"])
+    else:
+        return None
+
+df_future = calcola_spese_ricorrenti_future(12)
+
+if df_future is not None and not df_future.empty:
+    col1, col2 = st.columns(2)
+    with col1:
+        fig_future_pie = px.pie(df_future, values="Importo", names="Tipo",
+                                title="Spese Future per Tipo (%)",
+                                hole=0.3, color_discrete_sequence=px.colors.sequential.Oranges_r)
+        st.plotly_chart(fig_future_pie, use_container_width=True)
+    with col2:
+        fig_future_bar = px.bar(df_future, x="Tipo", y="Importo",
+                                title="Spese Future (€)",
+                                color="Tipo", text_auto=True)
+        st.plotly_chart(fig_future_bar, use_container_width=True)
+else:
+    st.info("Nessuna spesa ricorrente futura programmata.")
+
+# --- ENTRATE (storiche) a torta ---
+st.divider()
+st.subheader("📊 Entrate (storiche)")
 entrate_df = df[df["Importo"] > 0]
 if not entrate_df.empty:
     entrate_tipo = entrate_df.groupby("Tipo")["Importo"].sum().reset_index()
-    fig_entrate_tipo = px.pie(entrate_tipo, values="Importo", names="Tipo",
-                              title="Entrate per Tipo (%)",
-                              hole=0.3)
-    st.plotly_chart(fig_entrate_tipo, use_container_width=True)
+    fig_entrate_pie = px.pie(entrate_tipo, values="Importo", names="Tipo",
+                             title="Entrate per Tipo (%)",
+                             hole=0.3)
+    st.plotly_chart(fig_entrate_pie, use_container_width=True)
 else:
     st.info("Nessuna entrata registrata.")
-
 # --- PROIEZIONE FUTURA (basata su ricorrenze programmate) ---
 st.divider()
 st.subheader("⏳ Proiezione Futura (Runway)")
