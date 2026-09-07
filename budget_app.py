@@ -386,90 +386,106 @@ if not spese_df.empty:
 else:
     st.info("Nessuna spesa registrata.")
 
-# --- SPESE RICORRENTI FUTURE (prossimi 12 mesi) ---
+# --- SPESE RICORRENTI DEL MESE SUCCESSIVO ---
 st.divider()
-st.subheader("📊 Spese Ricorrenti Future (programmate, nei prossimi 12 mesi)")
+st.subheader("📅 Spese Ricorrenti del Mese Prossimo")
 
-def calcola_spese_ricorrenti_future(mesi=12):
+def calcola_spese_mese_successivo():
     oggi = datetime.now().date()
-    spese_future_per_tipo = {}
+    
+    # Calcola il mese successivo a oggi
+    if oggi.month == 12:
+        anno_target = oggi.year + 1
+        mese_target = 1
+    else:
+        anno_target = oggi.year
+        mese_target = oggi.month + 1
+    
+    spese_mese = {}
     
     for _, row in df_rec.iterrows():
         if not row["Attiva"]:
             continue
-        # Solo spese (negative) - escludiamo entrate e trasferimenti
-        if row["TipoMovimento"] == "Entrata (+)" or row["Importo"] <= 0:
+        # Considera solo le uscite (negative)
+        if row["TipoMovimento"] != "Uscita (-)":
             continue
         
+        # --- Ricorrenza Normale ---
         if row["TipoRicorrenza"] == "Normale":
             giorno = int(row["Giorno"])
-            # Conta quante volte la spesa si verifica nei prossimi 12 mesi
-            # partendo dal mese corrente
-            for mese_offset in range(mesi + 1):  # include il mese corrente
-                # Calcola l'anno e mese target
-                anno = oggi.year
-                mese = oggi.month + mese_offset
-                while mese > 12:
-                    mese -= 12
-                    anno += 1
-                
-                # Determina il giorno effettivo del mese
-                ultimo_giorno = calendar.monthrange(anno, mese)[1]
-                if giorno == 31 or giorno > ultimo_giorno:
-                    giorno_effettivo = ultimo_giorno
-                else:
-                    giorno_effettivo = giorno
-                
-                # Costruisci la data target
-                data_target = datetime(anno, mese, giorno_effettivo).date()
-                
-                # Se la data è già passata, salta (ma solo se è il mese corrente)
-                if mese_offset == 0 and data_target < oggi:
-                    continue
-                
-                # Conta questa spesa
-                importo_totale = abs(row["Importo"])
-                tipo = row["Tipo"] if row["Tipo"] else "Generico"
-                spese_future_per_tipo[tipo] = spese_future_per_tipo.get(tipo, 0) + importo_totale
-        
-        elif row["TipoRicorrenza"] == "Rate":
-            rate_pagate = row["RatePagate"]
-            rate_totali = row["RateTotali"]
-            rate_rimanenti = max(0, rate_totali - rate_pagate)
-            # Considera solo le rate nei prossimi 12 mesi
-            rate_nei_prossimi_mesi = min(rate_rimanenti, mesi + 1)  # +1 per includere il mese corrente
-            if rate_nei_prossimi_mesi == 0:
+            
+            # Determina il giorno effettivo nel mese target
+            ultimo_giorno = calendar.monthrange(anno_target, mese_target)[1]
+            if giorno > ultimo_giorno:
+                giorno_effettivo = ultimo_giorno
+            else:
+                giorno_effettivo = giorno
+            
+            # Costruisce la data nel mese target
+            data_rata = datetime(anno_target, mese_target, giorno_effettivo).date()
+            
+            # Se la data è già passata (es. oggi è già dopo quel giorno), non la contiamo
+            if data_rata < oggi:
                 continue
-            importo_rata = abs(row["Importo"]) / rate_totali
-            importo_totale = importo_rata * rate_nei_prossimi_mesi
+            
+            # Aggiunge la spesa al raggruppamento per tipo
             tipo = row["Tipo"] if row["Tipo"] else "Generico"
-            spese_future_per_tipo[tipo] = spese_future_per_tipo.get(tipo, 0) + importo_totale
+            spese_mese[tipo] = spese_mese.get(tipo, 0) + abs(row["Importo"])
+        
+        # --- Ricorrenza a Rate ---
+        elif row["TipoRicorrenza"] == "Rate":
+            if row["RatePagate"] >= row["RateTotali"]:
+                continue
+            
+            # Calcola la data della prossima rata
+            data_inizio = pd.to_datetime(row["DataInizio"]).date()
+            rate_pagate = int(row["RatePagate"])
+            
+            # Data della prossima rata = data_inizio + rate_pagate mesi
+            anno_rata = data_inizio.year
+            mese_rata = data_inizio.month + rate_pagate
+            while mese_rata > 12:
+                mese_rata -= 12
+                anno_rata += 1
+            
+            giorno_rata = data_inizio.day
+            ultimo_giorno_rata = calendar.monthrange(anno_rata, mese_rata)[1]
+            if giorno_rata > ultimo_giorno_rata:
+                giorno_rata = ultimo_giorno_rata
+            
+            data_prossima_rata = datetime(anno_rata, mese_rata, giorno_rata).date()
+            
+            # Verifica se la prossima rata cade nel mese target
+            if data_prossima_rata.year == anno_target and data_prossima_rata.month == mese_target:
+                # Se la data è già passata (non dovrebbe, ma controlliamo)
+                if data_prossima_rata < oggi:
+                    continue
+                importo_rata = abs(row["Importo"]) / row["RateTotali"]
+                tipo = row["Tipo"] if row["Tipo"] else "Generico"
+                spese_mese[tipo] = spese_mese.get(tipo, 0) + importo_rata
     
-    if spese_future_per_tipo:
-        return pd.DataFrame(list(spese_future_per_tipo.items()), columns=["Tipo", "Importo"])
+    if spese_mese:
+        return pd.DataFrame(list(spese_mese.items()), columns=["Tipo", "Importo"])
     else:
         return None
 
-df_future = calcola_spese_ricorrenti_future(12)
+df_mese_successivo = calcola_spese_mese_successivo()
 
-if df_future is not None and not df_future.empty:
-    col1, col2 = st.columns(2)
-    with col1:
-        fig_future_pie = px.pie(df_future, values="Importo", names="Tipo",
-                                title="Spese Future per Tipo (%)",
-                                hole=0.3, color_discrete_sequence=px.colors.sequential.Oranges_r)
-        st.plotly_chart(fig_future_pie, use_container_width=True)
-    with col2:
-        fig_future_bar = px.bar(df_future, x="Tipo", y="Importo",
-                                title="Spese Future (€)",
-                                color="Tipo", text_auto=True)
-        st.plotly_chart(fig_future_bar, use_container_width=True)
+if df_mese_successivo is not None and not df_mese_successivo.empty:
+    # Mostra solo il grafico a torta
+    fig_future_pie = px.pie(df_mese_successivo, values="Importo", names="Tipo",
+                            title=f"Spese Programmate per {calendar.month_name[mese_target]} {anno_target}",
+                            hole=0.3, color_discrete_sequence=px.colors.sequential.Oranges_r)
+    st.plotly_chart(fig_future_pie, use_container_width=True)
+    
+    # Mostra anche un piccolo riepilogo testuale
+    totale = df_mese_successivo["Importo"].sum()
+    st.caption(f"💡 Totale spese programmate per {calendar.month_name[mese_target]} {anno_target}: **€ {totale:.2f}**")
 else:
-    st.info("Nessuna spesa ricorrente futura programmata.")
-
+    st.info(f"📭 Nessuna spesa ricorrente programmata per il mese di {calendar.month_name[mese_target]} {anno_target}.")
 # --- ENTRATE (storiche) a torta ---
 st.divider()
-st.subheader("📊 Entrate (storiche)")
+st.subheader("📊 Storico Entrate")
 entrate_df = df[df["Importo"] > 0]
 if not entrate_df.empty:
     entrate_tipo = entrate_df.groupby("Tipo")["Importo"].sum().reset_index()
