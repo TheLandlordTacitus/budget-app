@@ -20,7 +20,6 @@ else:
     df = pd.read_csv(DATA_FILE)
     df["Data"] = pd.to_datetime(df["Data"]).dt.date
     if "Tipo" not in df.columns:
-        # Migrazione: se esisteva TipoSpesa lo rinomino
         if "TipoSpesa" in df.columns:
             df.rename(columns={"TipoSpesa": "Tipo"}, inplace=True)
         else:
@@ -28,9 +27,10 @@ else:
     if "Contenitore" not in df.columns:
         df["Contenitore"] = "Contanti"
 
-# --- Spese Ricorrenti ---
+# --- Spese Ricorrenti (ora anche Entrate Ricorrenti) ---
 if not os.path.exists(RECURRING_FILE):
-    df_rec = pd.DataFrame(columns=["Nome", "Importo", "Categoria", "Contenitore", "Tipo", "Giorno", "Attiva"])
+    # 🆕 Aggiunto campo "TipoMovimento" ("Entrata (+)" o "Uscita (-)")
+    df_rec = pd.DataFrame(columns=["Nome", "Importo", "Categoria", "Contenitore", "Tipo", "Giorno", "Attiva", "TipoMovimento"])
     df_rec.to_csv(RECURRING_FILE, index=False)
 else:
     df_rec = pd.read_csv(RECURRING_FILE)
@@ -38,8 +38,11 @@ else:
         df_rec["Attiva"] = True
     if "Tipo" not in df_rec.columns:
         df_rec["Tipo"] = "Generico"
+    # 🆕 Migrazione per vecchie ricorrenze (se non hanno TipoMovimento, le imposto come Uscita per default)
+    if "TipoMovimento" not in df_rec.columns:
+        df_rec["TipoMovimento"] = "Uscita (-)"
 
-# --- Funzione per applicare le ricorrenze ---
+# --- Funzione per applicare le ricorrenze (aggiornata per gestire + e -) ---
 def applica_ricorrenze():
     oggi = datetime.now().date()
     modifiche = False
@@ -55,29 +58,39 @@ def applica_ricorrenze():
         else:
             if oggi.day != giorno:
                 continue
+        
+        # Controllo duplicati
         già_inserita = df[
             (df["Data"] == oggi) & 
             (df["Descrizione"] == f"RICORRENTE: {row['Nome']}")
         ]
         if not già_inserita.empty:
             continue
+        
+        # 🆕 Determino il segno dell'importo in base al tipo movimento
+        if row["TipoMovimento"] == "Entrata (+)":
+            importo_effettivo = abs(row["Importo"])   # Positivo
+        else:  # "Uscita (-)"
+            importo_effettivo = -abs(row["Importo"])  # Negativo
+        
         nuova_riga = pd.DataFrame({
             "Data": [oggi],
             "Categoria": [row["Categoria"]],
             "Descrizione": [f"RICORRENTE: {row['Nome']}"],
-            "Importo": [-abs(row["Importo"])],
+            "Importo": [importo_effettivo],
             "Contenitore": [row["Contenitore"]],
             "Tipo": [row["Tipo"]],
         })
         df.loc[len(df)] = nuova_riga.iloc[0]
         modifiche = True
+    
     if modifiche:
         df.to_csv(DATA_FILE, index=False)
         return True
     return False
 
 if applica_ricorrenze():
-    st.toast("📅 Spese ricorrenti del giorno aggiunte!", icon="✅")
+    st.toast("📅 Ricorrenze del giorno aggiunte!", icon="✅")
 
 # --- SIDEBAR: INPUT MOVIMENTO ---
 st.sidebar.header("➕ Inserisci Movimento")
@@ -91,15 +104,12 @@ with st.sidebar.form("new_transaction"):
     categoria = st.text_input("Categoria (es. Affitto, Ristorante)")
     descrizione = st.text_input("Descrizione")
     contenitore = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
-    
-    # 🆕 Campo TIPO libero
     tipo_personalizzato = st.text_input("Tipo (es. Necessaria, Extra, Fissa, Stipendio, ...)", placeholder="Inserisci un tipo a piacere")
     
     submitted = st.form_submit_button("Aggiungi")
     
     if submitted and importo > 0:
         valore = importo if tipo_mov == "Entrata (+)" else -importo
-        # Se il tipo non è stato compilato, uso "Generico"
         if not tipo_personalizzato.strip():
             tipo_personalizzato = "Generico"
         nuova_riga = pd.DataFrame({
@@ -153,17 +163,23 @@ with st.sidebar.form("transfer_form"):
             df.to_csv(DATA_FILE, index=False)
             st.rerun()
 
-# --- SIDEBAR: GESTIONE RICORRENZE ---
+# --- SIDEBAR: GESTIONE RICORRENZE (aggiornata con TipoMovimento) ---
 st.sidebar.divider()
-st.sidebar.header("🗓️ Spese Ricorrenti")
+st.sidebar.header("🗓️ Spese/Entrate Ricorrenti")
 
 with st.sidebar.expander("➕ Aggiungi nuova ricorrenza", expanded=False):
     with st.form("new_recurring"):
-        nome_rec = st.text_input("Nome (es. Affitto, Netflix)")
-        importo_rec = st.number_input("Importo (€)", min_value=0.01, step=0.50)
+        nome_rec = st.text_input("Nome (es. Affitto, Stipendio, Netflix)")
+        col1_rec, col2_rec = st.columns(2)
+        with col1_rec:
+            importo_rec = st.number_input("Importo (€)", min_value=0.01, step=0.50)
+        with col2_rec:
+            # 🆕 Scelta se è entrata o uscita
+            tipo_mov_rec = st.selectbox("Tipo movimento", ["Uscita (-)", "Entrata (+)"])
+        
         categoria_rec = st.text_input("Categoria")
         contenitore_rec = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
-        tipo_rec = st.text_input("Tipo (es. Fissa, Extra)", placeholder="Inserisci un tipo")
+        tipo_rec = st.text_input("Tipo personalizzato (es. Fissa, Extra, Stipendio)", placeholder="Inserisci un tipo")
         giorno_rec = st.number_input("Giorno del mese (1-31)", min_value=1, max_value=31, value=1, step=1)
         st.caption("💡 Usa 31 per l'ultimo giorno del mese")
         
@@ -173,13 +189,14 @@ with st.sidebar.expander("➕ Aggiungi nuova ricorrenza", expanded=False):
             if not tipo_rec.strip():
                 tipo_rec = "Generico"
             nuova_rec = pd.DataFrame({
-                "Nome": [nome_rec if nome_rec else f"Spesa {len(df_rec)+1}"],
+                "Nome": [nome_rec if nome_rec else f"Ricorrenza {len(df_rec)+1}"],
                 "Importo": [importo_rec],
                 "Categoria": [categoria_rec if categoria_rec else "Varie"],
                 "Contenitore": [contenitore_rec],
                 "Tipo": [tipo_rec],
                 "Giorno": [giorno_rec],
                 "Attiva": [True],
+                "TipoMovimento": [tipo_mov_rec],  # 🆕 Salviamo se è Entrata o Uscita
             })
             df_rec = pd.concat([df_rec, nuova_rec], ignore_index=True)
             df_rec.to_csv(RECURRING_FILE, index=False)
@@ -192,8 +209,10 @@ if not df_rec.empty:
         with col1:
             stato = st.checkbox("✅", value=row["Attiva"], key=f"rec_{idx}")
         with col2:
+            # Mostro il segno (+) o (-) davanti all'importo
+            segno = "+" if row["TipoMovimento"] == "Entrata (+)" else "-"
             st.write(f"**{row['Nome']}**")
-            st.caption(f"€{row['Importo']:.2f} - Giorno {int(row['Giorno'])} - {row['Tipo']}")
+            st.caption(f"{segno} €{row['Importo']:.2f} - Giorno {int(row['Giorno'])} - {row['Tipo']}")
         with col3:
             if st.button("🗑️", key=f"del_{idx}"):
                 df_rec = df_rec.drop(idx).reset_index(drop=True)
@@ -204,7 +223,7 @@ if not df_rec.empty:
             df_rec.to_csv(RECURRING_FILE, index=False)
             st.rerun()
 else:
-    st.sidebar.info("Nessuna spesa ricorrente.")
+    st.sidebar.info("Nessuna ricorrenza. Aggiungine una sopra!")
 
 # --- DASHBOARD PRINCIPALE ---
 saldo_attuale = df["Importo"].sum()
@@ -234,27 +253,25 @@ if not saldo_contenitore.empty:
 else:
     st.info("Non hai ancora movimenti.")
 
-# --- ANALISI PER TIPO (nuovo) ---
+# --- ANALISI PER TIPO ---
 st.divider()
-st.subheader("📊 Analisi per Tipo (personale)")
+st.subheader("📊 Analisi per Tipo (personalizzato)")
 
-# Spese per tipo
 spese_df = df[df["Importo"] < 0]
 if not spese_df.empty:
     spese_tipo = spese_df.groupby("Tipo")["Importo"].sum().abs().reset_index()
     fig_spese_tipo = px.bar(spese_tipo, x="Tipo", y="Importo", 
-                            title="Spese per Tipo (personalizzato)",
+                            title="Spese per Tipo",
                             color="Tipo", text_auto=True)
     st.plotly_chart(fig_spese_tipo, use_container_width=True)
 else:
     st.info("Nessuna spesa registrata.")
 
-# Entrate per tipo
 entrate_df = df[df["Importo"] > 0]
 if not entrate_df.empty:
     entrate_tipo = entrate_df.groupby("Tipo")["Importo"].sum().reset_index()
     fig_entrate_tipo = px.pie(entrate_tipo, values="Importo", names="Tipo", 
-                              title="Entrate per Tipo (personalizzato)",
+                              title="Entrate per Tipo",
                               hole=0.3)
     st.plotly_chart(fig_entrate_tipo, use_container_width=True)
 else:
@@ -301,6 +318,8 @@ st.dataframe(df.sort_values("Data", ascending=False), use_container_width=True)
 
 # --- RESET ---
 if st.button("🗑️ Cancella tutti i dati e ricomincia"):
-    os.remove(DATA_FILE)
-    os.remove(RECURRING_FILE)
+    if os.path.exists(DATA_FILE):
+        os.remove(DATA_FILE)
+    if os.path.exists(RECURRING_FILE):
+        os.remove(RECURRING_FILE)
     st.rerun()
