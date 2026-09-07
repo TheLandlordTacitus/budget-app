@@ -397,38 +397,47 @@ def calcola_spese_ricorrenti_future(mesi=12):
     for _, row in df_rec.iterrows():
         if not row["Attiva"]:
             continue
-        if row["TipoMovimento"] == "Entrata (+)" or row["Importo"] >= 0:
-            continue  # Solo spese (negative)
+        # Solo spese (negative) - escludiamo entrate e trasferimenti
+        if row["TipoMovimento"] == "Entrata (+)" or row["Importo"] <= 0:
+            continue
         
         if row["TipoRicorrenza"] == "Normale":
             giorno = int(row["Giorno"])
-            count = 0
-            for mese_offset in range(1, mesi + 1):
+            # Conta quante volte la spesa si verifica nei prossimi 12 mesi
+            # partendo dal mese corrente
+            for mese_offset in range(mesi + 1):  # include il mese corrente
+                # Calcola l'anno e mese target
                 anno = oggi.year
                 mese = oggi.month + mese_offset
                 while mese > 12:
                     mese -= 12
                     anno += 1
-                if giorno == 31:
-                    ultimo_giorno = calendar.monthrange(anno, mese)[1]
+                
+                # Determina il giorno effettivo del mese
+                ultimo_giorno = calendar.monthrange(anno, mese)[1]
+                if giorno == 31 or giorno > ultimo_giorno:
                     giorno_effettivo = ultimo_giorno
                 else:
-                    ultimo_giorno = calendar.monthrange(anno, mese)[1]
-                    if giorno > ultimo_giorno:
-                        continue
                     giorno_effettivo = giorno
-                count += 1
-            if count == 0:
-                continue
-            importo_totale = abs(row["Importo"]) * count
-            tipo = row["Tipo"] if row["Tipo"] else "Generico"
-            spese_future_per_tipo[tipo] = spese_future_per_tipo.get(tipo, 0) + importo_totale
+                
+                # Costruisci la data target
+                data_target = datetime(anno, mese, giorno_effettivo).date()
+                
+                # Se la data è già passata, salta (ma solo se è il mese corrente)
+                if mese_offset == 0 and data_target < oggi:
+                    continue
+                
+                # Conta questa spesa
+                importo_totale = abs(row["Importo"])
+                tipo = row["Tipo"] if row["Tipo"] else "Generico"
+                spese_future_per_tipo[tipo] = spese_future_per_tipo.get(tipo, 0) + importo_totale
         
         elif row["TipoRicorrenza"] == "Rate":
             rate_pagate = row["RatePagate"]
             rate_totali = row["RateTotali"]
             rate_rimanenti = max(0, rate_totali - rate_pagate)
-            rate_nei_prossimi_mesi = min(rate_rimanenti, mesi)
+            # Considera solo le rate nei prossimi 12 mesi
+            rate_nei_prossimi_mesi = min(rate_rimanenti, mesi + 1)  # +1 per includere il mese corrente
             if rate_nei_prossimi_mesi == 0:
                 continue
             importo_rata = abs(row["Importo"]) / rate_totali
