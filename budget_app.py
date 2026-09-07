@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import os
+import calendar
 
 # --- Configurazione pagina ---
 st.set_page_config(page_title="Il Mio Budget Personale", layout="wide")
@@ -27,10 +28,13 @@ else:
     if "Contenitore" not in df.columns:
         df["Contenitore"] = "Contanti"
 
-# --- Spese Ricorrenti (ora anche Entrate Ricorrenti) ---
+# --- Ricorrenze (incluse le Rate) ---
 if not os.path.exists(RECURRING_FILE):
-    # 🆕 Aggiunto campo "TipoMovimento" ("Entrata (+)" o "Uscita (-)")
-    df_rec = pd.DataFrame(columns=["Nome", "Importo", "Categoria", "Contenitore", "Tipo", "Giorno", "Attiva", "TipoMovimento"])
+    df_rec = pd.DataFrame(columns=[
+        "Nome", "Importo", "Categoria", "Contenitore", "Tipo",
+        "Giorno", "Attiva", "TipoMovimento", "TipoRicorrenza",
+        "DataInizio", "RateTotali", "RatePagate"
+    ])
     df_rec.to_csv(RECURRING_FILE, index=False)
 else:
     df_rec = pd.read_csv(RECURRING_FILE)
@@ -38,64 +42,121 @@ else:
         df_rec["Attiva"] = True
     if "Tipo" not in df_rec.columns:
         df_rec["Tipo"] = "Generico"
-    # 🆕 Migrazione per vecchie ricorrenze (se non hanno TipoMovimento, le imposto come Uscita per default)
     if "TipoMovimento" not in df_rec.columns:
         df_rec["TipoMovimento"] = "Uscita (-)"
+    if "TipoRicorrenza" not in df_rec.columns:
+        df_rec["TipoRicorrenza"] = "Normale"
+    if "DataInizio" not in df_rec.columns:
+        df_rec["DataInizio"] = pd.NA
+    if "RateTotali" not in df_rec.columns:
+        df_rec["RateTotali"] = 1
+    if "RatePagate" not in df_rec.columns:
+        df_rec["RatePagate"] = 0
 
-# --- Funzione per applicare le ricorrenze (aggiornata per gestire + e -) ---
+# --- Funzione per applicare le ricorrenze (supporta anche le Rate) ---
 def applica_ricorrenze():
     oggi = datetime.now().date()
     modifiche = False
-    for _, row in df_rec.iterrows():
+    
+    for idx, row in df_rec.iterrows():
         if not row["Attiva"]:
             continue
-        giorno = int(row["Giorno"])
-        if giorno == 31:
-            import calendar
-            ultimo_giorno = calendar.monthrange(oggi.year, oggi.month)[1]
-            if oggi.day != ultimo_giorno:
+        
+        # --- RICORRENZA NORMALE ---
+        if row["TipoRicorrenza"] == "Normale":
+            giorno = int(row["Giorno"])
+            if giorno == 31:
+                ultimo_giorno = calendar.monthrange(oggi.year, oggi.month)[1]
+                if oggi.day != ultimo_giorno:
+                    continue
+            else:
+                if oggi.day != giorno:
+                    continue
+            
+            già_inserita = df[
+                (df["Data"] == oggi) & 
+                (df["Descrizione"] == f"RICORRENTE: {row['Nome']}")
+            ]
+            if not già_inserita.empty:
                 continue
-        else:
-            if oggi.day != giorno:
+            
+            if row["TipoMovimento"] == "Entrata (+)":
+                importo_effettivo = abs(row["Importo"])
+            else:
+                importo_effettivo = -abs(row["Importo"])
+            
+            nuova_riga = pd.DataFrame({
+                "Data": [oggi],
+                "Categoria": [row["Categoria"]],
+                "Descrizione": [f"RICORRENTE: {row['Nome']}"],
+                "Importo": [importo_effettivo],
+                "Contenitore": [row["Contenitore"]],
+                "Tipo": [row["Tipo"]],
+            })
+            df.loc[len(df)] = nuova_riga.iloc[0]
+            modifiche = True
+        
+        # --- RICORRENZA A RATE ---
+        elif row["TipoRicorrenza"] == "Rate":
+            if row["RatePagate"] >= row["RateTotali"]:
                 continue
-        
-        # Controllo duplicati
-        già_inserita = df[
-            (df["Data"] == oggi) & 
-            (df["Descrizione"] == f"RICORRENTE: {row['Nome']}")
-        ]
-        if not già_inserita.empty:
-            continue
-        
-        # 🆕 Determino il segno dell'importo in base al tipo movimento
-        if row["TipoMovimento"] == "Entrata (+)":
-            importo_effettivo = abs(row["Importo"])   # Positivo
-        else:  # "Uscita (-)"
-            importo_effettivo = -abs(row["Importo"])  # Negativo
-        
-        nuova_riga = pd.DataFrame({
-            "Data": [oggi],
-            "Categoria": [row["Categoria"]],
-            "Descrizione": [f"RICORRENTE: {row['Nome']}"],
-            "Importo": [importo_effettivo],
-            "Contenitore": [row["Contenitore"]],
-            "Tipo": [row["Tipo"]],
-        })
-        df.loc[len(df)] = nuova_riga.iloc[0]
-        modifiche = True
+            
+            data_inizio = pd.to_datetime(row["DataInizio"]).date()
+            mesi_da_aggiungere = int(row["RatePagate"])
+            anno = data_inizio.year
+            mese = data_inizio.month + mesi_da_aggiungere
+            while mese > 12:
+                mese -= 12
+                anno += 1
+            giorno_rata = data_inizio.day
+            if giorno_rata == 31:
+                ultimo_giorno = calendar.monthrange(anno, mese)[1]
+                giorno_rata = ultimo_giorno
+            
+            data_rata = datetime(anno, mese, giorno_rata).date()
+            
+            if oggi == data_rata:
+                già_inserita = df[
+                    (df["Data"] == oggi) & 
+                    (df["Descrizione"] == f"RATA: {row['Nome']} ({int(row['RatePagate'])+1}/{int(row['RateTotali'])})")
+                ]
+                if not già_inserita.empty:
+                    continue
+                
+                importo_rata = abs(row["Importo"]) / row["RateTotali"]
+                if row["TipoMovimento"] == "Entrata (+)":
+                    importo_effettivo = importo_rata
+                else:
+                    importo_effettivo = -importo_rata
+                
+                nuova_riga = pd.DataFrame({
+                    "Data": [oggi],
+                    "Categoria": [row["Categoria"]],
+                    "Descrizione": [f"RATA: {row['Nome']} ({int(row['RatePagate'])+1}/{int(row['RateTotali'])})"],
+                    "Importo": [importo_effettivo],
+                    "Contenitore": [row["Contenitore"]],
+                    "Tipo": [row["Tipo"]],
+                })
+                df.loc[len(df)] = nuova_riga.iloc[0]
+                df_rec.at[idx, "RatePagate"] = row["RatePagate"] + 1
+                modifiche = True
     
     if modifiche:
         df.to_csv(DATA_FILE, index=False)
+        df_rec.to_csv(RECURRING_FILE, index=False)
         return True
     return False
 
 if applica_ricorrenze():
     st.toast("📅 Ricorrenze del giorno aggiunte!", icon="✅")
 
-# --- SIDEBAR: INPUT MOVIMENTO ---
-# ✅ VERSIONE CORRETTA
+# --- SIDEBAR ---
+
+st.sidebar.markdown("# 💰 Menù Principale")
+
+# --- 1. Inserisci Movimento ---
 with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
-    with st.form("new_transaction"):   # <-- NON usare st.sidebar.form
+    with st.form("new_transaction"):
         col1, col2 = st.columns(2)
         with col1:
             tipo_mov = st.selectbox("Tipo", ["Uscita (-)", "Entrata (+)"])
@@ -125,9 +186,9 @@ with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
             df.to_csv(DATA_FILE, index=False)
             st.rerun()
 
-# --- SIDEBAR: TRASFERIMENTO ---
+# --- 2. Trasferimento tra Conti ---
 with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=True):
-    with st.form("transfer_form"):   # <-- SENZA st.sidebar.
+    with st.form("transfer_form"):
         col1, col2 = st.columns(2)
         with col1:
             contenitore_da = st.selectbox("Da", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_from")
@@ -163,67 +224,116 @@ with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=True):
                 df.to_csv(DATA_FILE, index=False)
                 st.rerun()
 
-# --- SIDEBAR: GESTIONE RICORRENZE (aggiornata con TipoMovimento) ---
-st.sidebar.divider()
-st.sidebar.header("🗓️ Spese/Entrate Ricorrenti")
-
-with st.sidebar.expander("➕ Aggiungi nuova ricorrenza", expanded=False):
-    with st.form("new_recurring"):
-        nome_rec = st.text_input("Nome (es. Affitto, Stipendio, Netflix)")
-        col1_rec, col2_rec = st.columns(2)
-        with col1_rec:
-            importo_rec = st.number_input("Importo (€)", min_value=0.01, step=0.50)
-        with col2_rec:
-            # 🆕 Scelta se è entrata o uscita
-            tipo_mov_rec = st.selectbox("Tipo movimento", ["Uscita (-)", "Entrata (+)"])
-        
-        categoria_rec = st.text_input("Categoria")
-        contenitore_rec = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
-        tipo_rec = st.text_input("Tipo personalizzato (es. Fissa, Extra, Stipendio)", placeholder="Inserisci un tipo")
-        giorno_rec = st.number_input("Giorno del mese (1-31)", min_value=1, max_value=31, value=1, step=1)
-        st.caption("💡 Usa 31 per l'ultimo giorno del mese")
-        
-        aggiungi_rec = st.form_submit_button("➕ Aggiungi Ricorrenza")
-        
-        if aggiungi_rec:
-            if not tipo_rec.strip():
-                tipo_rec = "Generico"
-            nuova_rec = pd.DataFrame({
-                "Nome": [nome_rec if nome_rec else f"Ricorrenza {len(df_rec)+1}"],
-                "Importo": [importo_rec],
-                "Categoria": [categoria_rec if categoria_rec else "Varie"],
-                "Contenitore": [contenitore_rec],
-                "Tipo": [tipo_rec],
-                "Giorno": [giorno_rec],
-                "Attiva": [True],
-                "TipoMovimento": [tipo_mov_rec],  # 🆕 Salviamo se è Entrata o Uscita
-            })
-            df_rec = pd.concat([df_rec, nuova_rec], ignore_index=True)
-            df_rec.to_csv(RECURRING_FILE, index=False)
-            st.rerun()
-
-if not df_rec.empty:
-    st.sidebar.subheader("📋 Le tue ricorrenze")
-    for idx, row in df_rec.iterrows():
-        col1, col2, col3 = st.sidebar.columns([1, 3, 1])
-        with col1:
-            stato = st.checkbox("✅", value=row["Attiva"], key=f"rec_{idx}")
-        with col2:
-            # Mostro il segno (+) o (-) davanti all'importo
-            segno = "+" if row["TipoMovimento"] == "Entrata (+)" else "-"
-            st.write(f"**{row['Nome']}**")
-            st.caption(f"{segno} €{row['Importo']:.2f} - Giorno {int(row['Giorno'])} - {row['Tipo']}")
-        with col3:
-            if st.button("🗑️", key=f"del_{idx}"):
-                df_rec = df_rec.drop(idx).reset_index(drop=True)
+# --- 3. Spese/Entrate Ricorrenti + Rate ---
+with st.sidebar.expander("🗓️ Spese/Entrate Ricorrenti", expanded=False):
+    
+    # Sottomenu: Aggiungi Ricorrenza Normale
+    with st.expander("➕ Aggiungi ricorrenza normale", expanded=False):
+        with st.form("new_recurring"):
+            nome_rec = st.text_input("Nome (es. Affitto, Stipendio, Netflix)")
+            col1_rec, col2_rec = st.columns(2)
+            with col1_rec:
+                importo_rec = st.number_input("Importo (€)", min_value=0.01, step=0.50)
+            with col2_rec:
+                tipo_mov_rec = st.selectbox("Tipo movimento", ["Uscita (-)", "Entrata (+)"])
+            
+            categoria_rec = st.text_input("Categoria")
+            contenitore_rec = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
+            tipo_rec = st.text_input("Tipo personalizzato", placeholder="es. Fissa, Extra, Stipendio")
+            giorno_rec = st.number_input("Giorno del mese (1-31)", min_value=1, max_value=31, value=1, step=1)
+            st.caption("💡 Usa 31 per l'ultimo giorno del mese")
+            
+            aggiungi_rec = st.form_submit_button("➕ Aggiungi Ricorrenza")
+            
+            if aggiungi_rec:
+                if not tipo_rec.strip():
+                    tipo_rec = "Generico"
+                nuova_rec = pd.DataFrame({
+                    "Nome": [nome_rec if nome_rec else f"Ricorrenza {len(df_rec)+1}"],
+                    "Importo": [importo_rec],
+                    "Categoria": [categoria_rec if categoria_rec else "Varie"],
+                    "Contenitore": [contenitore_rec],
+                    "Tipo": [tipo_rec],
+                    "Giorno": [giorno_rec],
+                    "Attiva": [True],
+                    "TipoMovimento": [tipo_mov_rec],
+                    "TipoRicorrenza": ["Normale"],
+                    "DataInizio": [pd.NA],
+                    "RateTotali": [1],
+                    "RatePagate": [0],
+                })
+                df_rec = pd.concat([df_rec, nuova_rec], ignore_index=True)
                 df_rec.to_csv(RECURRING_FILE, index=False)
                 st.rerun()
-        if stato != row["Attiva"]:
-            df_rec.at[idx, "Attiva"] = stato
-            df_rec.to_csv(RECURRING_FILE, index=False)
-            st.rerun()
-else:
-    st.sidebar.info("Nessuna ricorrenza. Aggiungine una sopra!")
+    
+    # Sottomenu: Aggiungi Rate
+    with st.expander("📅 Aggiungi pagamento a rate", expanded=False):
+        with st.form("new_rate"):
+            nome_rate = st.text_input("Nome (es. PayPal 3 rate, TV rate)")
+            col1_rate, col2_rate = st.columns(2)
+            with col1_rate:
+                importo_totale_rate = st.number_input("Importo totale (€)", min_value=0.01, step=0.50)
+            with col2_rate:
+                num_rate = st.number_input("Numero rate totali", min_value=1, max_value=36, value=3, step=1)
+            
+            data_inizio_rate = st.date_input("Data della prima rata", value=datetime.now().date())
+            categoria_rate = st.text_input("Categoria")
+            contenitore_rate = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="rate_contenitore")
+            tipo_rate = st.text_input("Tipo personalizzato", placeholder="es. Fissa, Extra")
+            tipo_mov_rate = st.selectbox("Tipo movimento", ["Uscita (-)", "Entrata (+)"], key="rate_tipo_mov")
+            
+            st.caption("💡 Le rate verranno aggiunte automaticamente ogni mese alla stessa data della prima rata.")
+            
+            aggiungi_rate = st.form_submit_button("➕ Aggiungi Rate")
+            
+            if aggiungi_rate:
+                if not tipo_rate.strip():
+                    tipo_rate = "Generico"
+                nuova_rec = pd.DataFrame({
+                    "Nome": [nome_rate if nome_rate else f"Rate {len(df_rec)+1}"],
+                    "Importo": [importo_totale_rate],
+                    "Categoria": [categoria_rate if categoria_rate else "Varie"],
+                    "Contenitore": [contenitore_rate],
+                    "Tipo": [tipo_rate],
+                    "Giorno": [data_inizio_rate.day],
+                    "Attiva": [True],
+                    "TipoMovimento": [tipo_mov_rate],
+                    "TipoRicorrenza": ["Rate"],
+                    "DataInizio": [data_inizio_rate],
+                    "RateTotali": [num_rate],
+                    "RatePagate": [0],
+                })
+                df_rec = pd.concat([df_rec, nuova_rec], ignore_index=True)
+                df_rec.to_csv(RECURRING_FILE, index=False)
+                st.rerun()
+    
+    # --- Mostra le ricorrenze esistenti ---
+    if not df_rec.empty:
+        st.sidebar.subheader("📋 Le tue ricorrenze")
+        for idx, row in df_rec.iterrows():
+            col1, col2, col3 = st.sidebar.columns([1, 3, 1])
+            with col1:
+                stato = st.checkbox("✅", value=row["Attiva"], key=f"rec_{idx}")
+            with col2:
+                if row["TipoRicorrenza"] == "Normale":
+                    segno = "+" if row["TipoMovimento"] == "Entrata (+)" else "-"
+                    st.write(f"**{row['Nome']}**")
+                    st.caption(f"{segno} €{row['Importo']:.2f} - Giorno {int(row['Giorno'])} - {row['Tipo']}")
+                else:
+                    segno = "+" if row["TipoMovimento"] == "Entrata (+)" else "-"
+                    st.write(f"**{row['Nome']}** (Rate)")
+                    st.caption(f"{segno} €{row['Importo']/row['RateTotali']:.2f} rata - {int(row['RatePagate'])}/{int(row['RateTotali'])} pagate - {row['Tipo']}")
+            with col3:
+                if st.button("🗑️", key=f"del_{idx}"):
+                    df_rec = df_rec.drop(idx).reset_index(drop=True)
+                    df_rec.to_csv(RECURRING_FILE, index=False)
+                    st.rerun()
+            if stato != row["Attiva"]:
+                df_rec.at[idx, "Attiva"] = stato
+                df_rec.to_csv(RECURRING_FILE, index=False)
+                st.rerun()
+    else:
+        st.sidebar.info("Nessuna ricorrenza.")
 
 # --- DASHBOARD PRINCIPALE ---
 saldo_attuale = df["Importo"].sum()
@@ -277,51 +387,117 @@ if not entrate_df.empty:
 else:
     st.info("Nessuna entrata registrata.")
 
-# --- RUNWAY ---
+# --- PROIEZIONE FUTURA (basata su ricorrenze programmate) ---
 st.divider()
 st.subheader("⏳ Proiezione Futura (Runway)")
+
+# Calcolo del burn rate storico (per i messaggi di avviso)
 ultimo_mese = df[df["Data"] >= (datetime.now().date() - timedelta(days=30))]
 spesa_giornaliera_media = abs(ultimo_mese[ultimo_mese["Importo"] < 0]["Importo"].mean())
 if pd.isna(spesa_giornaliera_media): spesa_giornaliera_media = 0
 entrata_giornaliera_media = ultimo_mese[ultimo_mese["Importo"] > 0]["Importo"].mean()
 if pd.isna(entrata_giornaliera_media): entrata_giornaliera_media = 0
-burn_rate_giornaliero = spesa_giornaliera_media - entrata_giornaliera_media
+burn_rate_storico = spesa_giornaliera_media - entrata_giornaliera_media
 
-if burn_rate_giornaliero > 0 and saldo_attuale > 0:
-    giorni_rimanenti = saldo_attuale / burn_rate_giornaliero
+if burn_rate_storico > 0 and saldo_attuale > 0:
+    giorni_rimanenti = saldo_attuale / burn_rate_storico
     mesi_rimanenti = giorni_rimanenti / 30
-    st.warning(f"⚠️ Al ritmo attuale, esaurirai i soldi tra **{mesi_rimanenti:.1f} mesi** (circa {int(giorni_rimanenti)} giorni).")
+    st.warning(f"⚠️ Al ritmo storico, esaurirai i soldi tra **{mesi_rimanenti:.1f} mesi** (circa {int(giorni_rimanenti)} giorni).")
 elif saldo_attuale <= 0:
     st.error("🚨 Sei già in bancarotta!")
 else:
     st.success("✅ Stai risparmiando!")
 
-if burn_rate_giornaliero > 0:
-    proiezione = []
-    saldo_futuro = saldo_attuale
-    for i in range(13):
-        proiezione.append({"Mese": i, "Saldo Previsto": max(0, saldo_futuro)})
-        saldo_futuro -= burn_rate_giornaliero * 30
-    df_proiezione = pd.DataFrame(proiezione)
-    fig = px.line(df_proiezione, x="Mese", y="Saldo Previsto", 
-                  title="📉 Andamento del Saldo nei prossimi 12 mesi",
-                  markers=True)
-    fig.add_hline(y=0, line_dash="dash", line_color="red")
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("Non hai abbastanza dati per il calcolo.")
+# --- NUOVA PROIEZIONE BASATA SU RICORRENZE PROGRAMMATE ---
+def calcola_proiezione_ricorrenze(mesi=12):
+    """
+    Calcola il saldo futuro mese per mese considerando le ricorrenze attive.
+    Restituisce una lista di dizionari con Mese e Saldo Previsto.
+    """
+    oggi = datetime.now().date()
+    saldo = saldo_attuale
+    proiezione = [{"Mese": 0, "Saldo Previsto": saldo}]
+    
+    for mese_offset in range(1, mesi + 1):
+        # Calcola la data del mese corrente (approssimativa, 1° giorno del mese)
+        anno = oggi.year
+        mese = oggi.month + mese_offset
+        while mese > 12:
+            mese -= 12
+            anno += 1
+        
+        # Per ogni ricorrenza attiva, calcola l'importo che si applicherebbe in questo mese
+        totale_mese = 0
+        for _, row in df_rec.iterrows():
+            if not row["Attiva"]:
+                continue
+            
+            # RICORRENZA NORMALE
+            if row["TipoRicorrenza"] == "Normale":
+                giorno = int(row["Giorno"])
+                # Se il giorno è 31, usiamo l'ultimo giorno del mese
+                if giorno == 31:
+                    ultimo_giorno = calendar.monthrange(anno, mese)[1]
+                    giorno = ultimo_giorno
+                # Controlliamo se il giorno esiste nel mese (es. 31 febbraio non esiste)
+                if giorno > calendar.monthrange(anno, mese)[1]:
+                    giorno = calendar.monthrange(anno, mese)[1]
+                
+                # Se oggi è già passato il giorno di questo mese, la ricorrenza è già stata applicata
+                # (per la proiezione, consideriamo che verrà applicata)
+                if row["TipoMovimento"] == "Entrada (+)":
+                    totale_mese += abs(row["Importo"])
+                else:
+                    totale_mese -= abs(row["Importo"])
+            
+            # RICORRENZA A RATE
+            elif row["TipoRicorrenza"] == "Rate":
+                if row["RatePagate"] >= row["RateTotali"]:
+                    continue
+                
+                data_inizio = pd.to_datetime(row["DataInizio"]).date()
+                # Controlliamo se la rata cade in questo mese
+                # Calcoliamo il numero di rate che dovrebbero essere pagate entro questo mese
+                mesi_trascorsi = (anno - data_inizio.year) * 12 + (mese - data_inizio.month)
+                rate_dovute = min(mesi_trascorsi + 1, row["RateTotali"])
+                rate_già_pagate = row["RatePagate"]
+                
+                if rate_dovute > rate_già_pagate:
+                    importo_rata = abs(row["Importo"]) / row["RateTotali"]
+                    if row["TipoMovimento"] == "Entrata (+)":
+                        totale_mese += importo_rata
+                    else:
+                        totale_mese -= importo_rata
+        
+        saldo += totale_mese
+        proiezione.append({"Mese": mese_offset, "Saldo Previsto": max(0, saldo)})
+    
+    return proiezione
 
-# --- TABELLA CRONOLOGIA ---
+# Genera la proiezione su 12 mesi
+proiezione = calcola_proiezione_ricorrenze(12)
+df_proiezione = pd.DataFrame(proiezione)
+
+# Mostra il grafico
+fig = px.line(df_proiezione, x="Mese", y="Saldo Previsto", 
+              title="📉 Andamento del Saldo nei prossimi 12 mesi (considerando le ricorrenze programmate)",
+              markers=True)
+fig.add_hline(y=0, line_dash="dash", line_color="red")
+st.plotly_chart(fig, use_container_width=True)
+
+# Mostra anche i dati storici se esistono
+if not df.empty:
+    st.caption("💡 La proiezione tiene conto delle tue spese/entrate ricorrenti attive (normali e rate).")
+
 # --- TABELLE ENTRATE E USCITE SEPARATE CON COLORI E DUE DECIMALI ---
 st.divider()
 st.subheader("📋 Entrate")
 entrate_df = df[df["Importo"] > 0].sort_values("Data", ascending=False)
 if not entrate_df.empty:
-    # Colore verde per gli importi positivi e formato a 2 decimali
     st.dataframe(
         entrate_df.style
         .map(lambda v: 'color: green' if v > 0 else '', subset=['Importo'])
-        .format("€ {:.2f}", subset=['Importo']),  # <- DUE DECIMALI
+        .format("€ {:.2f}", subset=['Importo']),
         use_container_width=True
     )
 else:
@@ -330,15 +506,15 @@ else:
 st.subheader("📋 Uscite")
 uscite_df = df[df["Importo"] < 0].sort_values("Data", ascending=False)
 if not uscite_df.empty:
-    # Colore rosso per gli importi negativi e formato a 2 decimali
     st.dataframe(
         uscite_df.style
         .map(lambda v: 'color: red' if v < 0 else '', subset=['Importo'])
-        .format("{:.2f}", subset=['Importo']),  # <- DUE DECIMALI
+        .format("€ {:.2f}", subset=['Importo']),
         use_container_width=True
     )
 else:
     st.info("Nessuna uscita registrata.")
+
 # --- RESET ---
 if st.button("🗑️ Cancella tutti i dati e ricomincia"):
     if os.path.exists(DATA_FILE):
