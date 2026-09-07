@@ -20,7 +20,7 @@ if not os.path.exists(DATA_FILE):
         "Descrizione": ["Spesa", "Panetteria", "Supermercato", "Luce", "Gas", "Cinema", "Cena", "Bar", "Carburante", "Biglietto"],
         "Importo": [-45, -50, -32, -120, -80, -25, -30, -15, -40, -20],
         # NUOVE COLONNE:
-        "Contenitore": ["Contanti"] * 3 + ["Conto Banca 1"] * 2 + ["Contanti"] * 3 + ["Conto Banca 2"] * 2,
+        "Contenitore": ["Contanti"] * 3 + ["Conto Fineco"] * 2 + ["Contanti"] * 3 + ["Conto Revolut"] * 2,
         "TipoSpesa": ["Necessaria"] * 5 + ["Extra"] * 3 + ["Necessaria"] * 2,
     })
     df.to_csv(DATA_FILE, index=False)
@@ -52,7 +52,7 @@ with st.sidebar.form("new_transaction"):
     descrizione = st.text_input("Descrizione")
     
     # NUOVI INPUT: Contenitore e Tipo Spesa
-    contenitore = st.selectbox("Dove sono questi soldi?", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"])
+    contenitore = st.selectbox("Dove sono questi soldi?", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
     
     # Mostra il selettore "Tipo Spesa" solo se è un'uscita
     if tipo == "Uscita (-)":
