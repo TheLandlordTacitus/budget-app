@@ -10,30 +10,87 @@ st.title("💶 Controllo Spese e Proiezione Bancarotta")
 
 # --- Inizializzazione dati (salva in un file CSV) ---
 DATA_FILE = "transazioni.csv"
+RECURRING_FILE = "ricorrenze.csv"
 
-# Se il file non esiste, crea un dataframe con le nuove colonne
+# === SEZIONE 1: DATI TRANSAZIONI ===
 if not os.path.exists(DATA_FILE):
-    # Crea un dataframe di esempio
-    df = pd.DataFrame({
-        "Data": [datetime.now().date() - timedelta(days=i) for i in range(10, 0, -1)],
-        "Categoria": ["Alimentari"] * 3 + ["Bollette"] * 2 + ["Svago"] * 3 + ["Trasporti"] * 2,
-        "Descrizione": ["Spesa", "Panetteria", "Supermercato", "Luce", "Gas", "Cinema", "Cena", "Bar", "Carburante", "Biglietto"],
-        "Importo": [-45, -50, -32, -120, -80, -25, -30, -15, -40, -20],
-        "Contenitore": ["Contanti"] * 3 + ["Conto Fineco"] * 2 + ["Contanti"] * 3 + ["Conto Revolut"] * 2,
-        "TipoSpesa": ["Necessaria"] * 5 + ["Extra"] * 3 + ["Necessaria"] * 2,
-    })
+    # 🔥 PARTE DA ZERO: NESSUN DATO DI ESEMPIO!
+    df = pd.DataFrame(columns=["Data", "Categoria", "Descrizione", "Importo", "Contenitore", "TipoSpesa"])
     df.to_csv(DATA_FILE, index=False)
 else:
     df = pd.read_csv(DATA_FILE)
     df["Data"] = pd.to_datetime(df["Data"]).dt.date
     
-    # Migrazione dati per le nuove colonne
+    # Migrazione per le nuove colonne (se non esistono)
     if "Contenitore" not in df.columns:
         df["Contenitore"] = "Contanti"
     if "TipoSpesa" not in df.columns:
         df["TipoSpesa"] = "Necessaria"
         categorie_extra = ["Svago", "Cena", "Bar", "Cinema", "Ristorante", "Vestiti", "Regali"]
         df.loc[df["Categoria"].isin(categorie_extra), "TipoSpesa"] = "Extra"
+
+# === SEZIONE 2: SPESE RICORRENTI ===
+if not os.path.exists(RECURRING_FILE):
+    # Crea il file delle ricorrenze vuoto (se non esiste)
+    df_rec = pd.DataFrame(columns=["Nome", "Importo", "Categoria", "Contenitore", "TipoSpesa", "Giorno", "Attiva"])
+    df_rec.to_csv(RECURRING_FILE, index=False)
+else:
+    df_rec = pd.read_csv(RECURRING_FILE)
+    # Assicuriamoci che la colonna Attiva esista (per vecchi file)
+    if "Attiva" not in df_rec.columns:
+        df_rec["Attiva"] = True
+
+# --- FUNZIONE PER APPLICARE LE SPESE RICORRENTI ---
+def applica_ricorrenze():
+    """Controlla se oggi è il giorno di una spesa ricorrente e, se non è già stata aggiunta, la inserisce."""
+    oggi = datetime.now().date()
+    modifiche = False
+    
+    for _, row in df_rec.iterrows():
+        if not row["Attiva"]:
+            continue  # Salta le spese disattivate
+        
+        giorno = int(row["Giorno"])
+        # Se il giorno è 31, lo gestiamo come "ultimo giorno del mese"
+        if giorno == 31:
+            # Prendiamo l'ultimo giorno del mese corrente
+            import calendar
+            ultimo_giorno = calendar.monthrange(oggi.year, oggi.month)[1]
+            if oggi.day != ultimo_giorno:
+                continue
+        else:
+            if oggi.day != giorno:
+                continue
+        
+        # Controlliamo se questa spesa è già stata aggiunta oggi (per evitare duplicati)
+        # Cerchiamo una transazione con la stessa descrizione e data odierna
+        già_inserita = df[
+            (df["Data"] == oggi) & 
+            (df["Descrizione"] == f"RICORRENTE: {row['Nome']}")
+        ]
+        if not già_inserita.empty:
+            continue  # Già inserita oggi, saltiamo
+        
+        # Aggiungiamo la spesa ricorrente
+        nuova_riga = pd.DataFrame({
+            "Data": [oggi],
+            "Categoria": [row["Categoria"]],
+            "Descrizione": [f"RICORRENTE: {row['Nome']}"],
+            "Importo": [-abs(row["Importo"])],  # Forziamo negativo
+            "Contenitore": [row["Contenitore"]],
+            "TipoSpesa": [row["TipoSpesa"]],
+        })
+        df.loc[len(df)] = nuova_riga.iloc[0]  # Aggiungiamo al DataFrame
+        modifiche = True
+    
+    if modifiche:
+        df.to_csv(DATA_FILE, index=False)
+        return True
+    return False
+
+# --- APPLICA RICORRENZE ALL'AVVIO ---
+if applica_ricorrenze():
+    st.toast("📅 Spese ricorrenti del giorno aggiunte!", icon="✅")
 
 # --- SIDEBAR: INPUT MOVIMENTO ---
 st.sidebar.header("➕ Inserisci Movimento")
@@ -69,12 +126,10 @@ with st.sidebar.form("new_transaction"):
         df.to_csv(DATA_FILE, index=False)
         st.rerun()
 
-# --- 🆕 SIDEBAR: NUOVA SEZIONE TRASFERIMENTO ---
+# --- SIDEBAR: TRASFERIMENTO TRA CONTI ---
 st.sidebar.divider()
 st.sidebar.header("🔄 Trasferisci tra Conti")
 with st.sidebar.form("transfer_form"):
-    st.sidebar.caption("Sposta soldi da un contenitore all'altro (es. da Contanti a Conto Fineco)")
-    
     col1, col2 = st.columns(2)
     with col1:
         contenitore_da = st.selectbox("Da", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_from")
@@ -90,16 +145,14 @@ with st.sidebar.form("transfer_form"):
         if contenitore_da == contenitore_a:
             st.error("❌ Non puoi trasferire soldi nello stesso contenitore!")
         else:
-            # 1. Uscita dal contenitore "DA"
             riga_uscita = pd.DataFrame({
                 "Data": [datetime.now().date()],
                 "Categoria": ["Trasferimento"],
                 "Descrizione": [descrizione_trf if descrizione_trf else f"Trasferito a {contenitore_a}"],
                 "Importo": [-importo_trf],
                 "Contenitore": [contenitore_da],
-                "TipoSpesa": ["Necessaria"],  # Neutrale per i trasferimenti
+                "TipoSpesa": ["Necessaria"],
             })
-            # 2. Entrata nel contenitore "A"
             riga_entrata = pd.DataFrame({
                 "Data": [datetime.now().date()],
                 "Categoria": ["Trasferimento"],
@@ -108,11 +161,66 @@ with st.sidebar.form("transfer_form"):
                 "Contenitore": [contenitore_a],
                 "TipoSpesa": ["Necessaria"],
             })
-            
-            # Aggiungo entrambe le righe al DataFrame
             df = pd.concat([df, riga_uscita, riga_entrata], ignore_index=True)
             df.to_csv(DATA_FILE, index=False)
             st.rerun()
+
+# --- 🆕 SIDEBAR: GESTIONE SPESE RICORRENTI ---
+st.sidebar.divider()
+st.sidebar.header("🗓️ Spese Ricorrenti")
+
+with st.sidebar.expander("➕ Aggiungi nuova ricorrenza", expanded=False):
+    with st.form("new_recurring"):
+        nome_rec = st.text_input("Nome (es. Affitto, Netflix)")
+        importo_rec = st.number_input("Importo (€)", min_value=0.01, step=0.50)
+        categoria_rec = st.text_input("Categoria")
+        contenitore_rec = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
+        tipo_spesa_rec = st.selectbox("Tipo spesa", ["Necessaria", "Extra"])
+        giorno_rec = st.number_input("Giorno del mese (1-31)", min_value=1, max_value=31, value=1, step=1)
+        st.caption("💡 Usa 31 per l'ultimo giorno del mese")
+        
+        aggiungi_rec = st.form_submit_button("➕ Aggiungi Ricorrenza")
+        
+        if aggiungi_rec:
+            nuova_rec = pd.DataFrame({
+                "Nome": [nome_rec if nome_rec else f"Spesa {len(df_rec)+1}"],
+                "Importo": [importo_rec],
+                "Categoria": [categoria_rec if categoria_rec else "Varie"],
+                "Contenitore": [contenitore_rec],
+                "TipoSpesa": [tipo_spesa_rec],
+                "Giorno": [giorno_rec],
+                "Attiva": [True],
+            })
+            df_rec = pd.concat([df_rec, nuova_rec], ignore_index=True)
+            df_rec.to_csv(RECURRING_FILE, index=False)
+            st.rerun()
+
+# --- Mostra le ricorrenze esistenti con toggle ON/OFF ---
+if not df_rec.empty:
+    st.sidebar.subheader("📋 Le tue ricorrenze")
+    
+    # Creo una lista di checkbox per attivare/disattivare
+    for idx, row in df_rec.iterrows():
+        col1, col2, col3 = st.sidebar.columns([1, 3, 1])
+        with col1:
+            stato = st.checkbox("✅", value=row["Attiva"], key=f"rec_{idx}")
+        with col2:
+            st.write(f"**{row['Nome']}**")
+            st.caption(f"€{row['Importo']:.2f} - Giorno {int(row['Giorno'])}")
+        with col3:
+            # Pulsante per eliminare la ricorrenza
+            if st.button("🗑️", key=f"del_{idx}"):
+                df_rec = df_rec.drop(idx).reset_index(drop=True)
+                df_rec.to_csv(RECURRING_FILE, index=False)
+                st.rerun()
+        
+        # Se lo stato è cambiato, aggiorno
+        if stato != row["Attiva"]:
+            df_rec.at[idx, "Attiva"] = stato
+            df_rec.to_csv(RECURRING_FILE, index=False)
+            st.rerun()
+else:
+    st.sidebar.info("Nessuna spesa ricorrente. Aggiungine una sopra!")
 
 # --- DASHBOARD PRINCIPALE ---
 # Calcoli base
@@ -216,4 +324,5 @@ st.dataframe(df.sort_values("Data", ascending=False), use_container_width=True)
 # --- BOTTONE PER RESETTARE I DATI ---
 if st.button("🗑️ Cancella tutti i dati e ricomincia"):
     os.remove(DATA_FILE)
+    os.remove(RECURRING_FILE)
     st.rerun()
