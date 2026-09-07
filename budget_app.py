@@ -93,7 +93,10 @@ if applica_ricorrenze():
     st.toast("📅 Ricorrenze del giorno aggiunte!", icon="✅")
 
 # --- SIDEBAR: INPUT MOVIMENTO ---
-with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
+st.sidebar.divider()
+st.sidebar.header("➕ Inserisci Movimento")
+
+with st.sidebar.expander("➕ Inserisci Movimento", expanded=False):
     with st.sidebar.form("new_transaction"):
         col1, col2 = st.columns(2)
         with col1:
