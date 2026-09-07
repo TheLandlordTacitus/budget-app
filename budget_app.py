@@ -3,7 +3,7 @@
 # =============================================================================
 
 # st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)  # Opzionale: icona in alto
-st.sidebar.header("💰 Menù Principale")
+st.sidebar.header("Menù Principale")
 
 # -----------------------------------------------------------------------------
 # 1. MENU A TENDINA: INSERISCI MOVIMENTO
