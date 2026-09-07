@@ -19,7 +19,7 @@ if not os.path.exists(DATA_FILE):
         "Categoria": ["Alimentari"] * 3 + ["Bollette"] * 2 + ["Svago"] * 3 + ["Trasporti"] * 2,
         "Descrizione": ["Spesa", "Panetteria", "Supermercato", "Luce", "Gas", "Cinema", "Cena", "Bar", "Carburante", "Biglietto"],
         "Importo": [-45, -50, -32, -120, -80, -25, -30, -15, -40, -20],
-        "Contenitore": ["Contanti"] * 3 + ["Conto Banca 1"] * 2 + ["Contanti"] * 3 + ["Conto Banca 2"] * 2,
+        "Contenitore": ["Contanti"] * 3 + ["Conto Fineco"] * 2 + ["Contanti"] * 3 + ["Conto Revolut"] * 2,
         "TipoSpesa": ["Necessaria"] * 5 + ["Extra"] * 3 + ["Necessaria"] * 2,
     })
     df.to_csv(DATA_FILE, index=False)
@@ -46,7 +46,7 @@ with st.sidebar.form("new_transaction"):
     
     categoria = st.text_input("Categoria (es. Affitto, Ristorante)")
     descrizione = st.text_input("Descrizione")
-    contenitore = st.selectbox("Dove sono questi soldi?", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"])
+    contenitore = st.selectbox("Dove sono questi soldi?", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
     
     if tipo == "Uscita (-)":
         tipo_spesa = st.selectbox("Tipo di spesa", ["Necessaria", "Extra"])
@@ -73,13 +73,13 @@ with st.sidebar.form("new_transaction"):
 st.sidebar.divider()
 st.sidebar.header("🔄 Trasferisci tra Conti")
 with st.sidebar.form("transfer_form"):
-    st.sidebar.caption("Sposta soldi da un contenitore all'altro (es. da Contanti a Conto Banca 1)")
+    st.sidebar.caption("Sposta soldi da un contenitore all'altro (es. da Contanti a Conto Fineco)")
     
     col1, col2 = st.columns(2)
     with col1:
-        contenitore_da = st.selectbox("Da", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"], key="transfer_from")
+        contenitore_da = st.selectbox("Da", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_from")
     with col2:
-        contenitore_a = st.selectbox("A", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"], key="transfer_to")
+        contenitore_a = st.selectbox("A", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_to")
     
     importo_trf = st.number_input("Importo da trasferire (€)", min_value=0.01, step=1.00, key="transfer_amount")
     descrizione_trf = st.text_input("Descrizione (opzionale)", placeholder="es. Prelievo contanti", key="transfer_desc")
