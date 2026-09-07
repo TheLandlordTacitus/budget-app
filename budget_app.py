@@ -93,75 +93,75 @@ if applica_ricorrenze():
     st.toast("📅 Ricorrenze del giorno aggiunte!", icon="✅")
 
 # --- SIDEBAR: INPUT MOVIMENTO ---
-st.sidebar.header("➕ Inserisci Movimento")
-with st.sidebar.form("new_transaction"):
-    col1, col2 = st.columns(2)
-    with col1:
-        tipo_mov = st.selectbox("Tipo", ["Uscita (-)", "Entrata (+)"])
-    with col2:
-        importo = st.number_input("Importo (€)", min_value=0.01, step=0.50)
-    
-    categoria = st.text_input("Categoria (es. Affitto, Ristorante)")
-    descrizione = st.text_input("Descrizione")
-    contenitore = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
-    tipo_personalizzato = st.text_input("Tipo (es. Necessaria, Extra, Fissa, Stipendio, ...)", placeholder="Inserisci un tipo a piacere")
-    
-    submitted = st.form_submit_button("Aggiungi")
-    
-    if submitted and importo > 0:
-        valore = importo if tipo_mov == "Entrata (+)" else -importo
-        if not tipo_personalizzato.strip():
-            tipo_personalizzato = "Generico"
-        nuova_riga = pd.DataFrame({
-            "Data": [datetime.now().date()],
-            "Categoria": [categoria if categoria else "Varie"],
-            "Descrizione": [descrizione if descrizione else "Movimento"],
-            "Importo": [valore],
-            "Contenitore": [contenitore],
-            "Tipo": [tipo_personalizzato],
-        })
-        df = pd.concat([df, nuova_riga], ignore_index=True)
-        df.to_csv(DATA_FILE, index=False)
-        st.rerun()
+with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
+    with st.sidebar.form("new_transaction"):
+        col1, col2 = st.columns(2)
+        with col1:
+            tipo_mov = st.selectbox("Tipo", ["Uscita (-)", "Entrata (+)"])
+        with col2:
+            importo = st.number_input("Importo (€)", min_value=0.01, step=0.50)
+        
+        categoria = st.text_input("Categoria (es. Affitto, Ristorante)")
+        descrizione = st.text_input("Descrizione")
+        contenitore = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
+        tipo_personalizzato = st.text_input("Tipo (es. Necessaria, Extra, Fissa, Stipendio, ...)", placeholder="Inserisci un tipo a piacere")
+        
+        submitted = st.form_submit_button("Aggiungi")
+        
+        if submitted and importo > 0:
+            valore = importo if tipo_mov == "Entrata (+)" else -importo
+            if not tipo_personalizzato.strip():
+                tipo_personalizzato = "Generico"
+            nuova_riga = pd.DataFrame({
+                "Data": [datetime.now().date()],
+                "Categoria": [categoria if categoria else "Varie"],
+                "Descrizione": [descrizione if descrizione else "Movimento"],
+                "Importo": [valore],
+                "Contenitore": [contenitore],
+                "Tipo": [tipo_personalizzato],
+            })
+            df = pd.concat([df, nuova_riga], ignore_index=True)
+            df.to_csv(DATA_FILE, index=False)
+            st.rerun()
 
 # --- SIDEBAR: TRASFERIMENTO ---
 st.sidebar.divider()
-st.sidebar.header("🔄 Trasferisci tra Conti")
-with st.sidebar.form("transfer_form"):
-    col1, col2 = st.columns(2)
-    with col1:
-        contenitore_da = st.selectbox("Da", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_from")
-    with col2:
-        contenitore_a = st.selectbox("A", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_to")
-    
-    importo_trf = st.number_input("Importo da trasferire (€)", min_value=0.01, step=1.00, key="transfer_amount")
-    descrizione_trf = st.text_input("Descrizione (opzionale)", placeholder="es. Prelievo contanti", key="transfer_desc")
-    
-    transfer_submitted = st.form_submit_button("🔄 Esegui Trasferimento")
-    
-    if transfer_submitted and importo_trf > 0:
-        if contenitore_da == contenitore_a:
-            st.error("❌ Non puoi trasferire soldi nello stesso contenitore!")
-        else:
-            riga_uscita = pd.DataFrame({
-                "Data": [datetime.now().date()],
-                "Categoria": ["Trasferimento"],
-                "Descrizione": [descrizione_trf if descrizione_trf else f"Trasferito a {contenitore_a}"],
-                "Importo": [-importo_trf],
-                "Contenitore": [contenitore_da],
-                "Tipo": ["Trasferimento"],
-            })
-            riga_entrata = pd.DataFrame({
-                "Data": [datetime.now().date()],
-                "Categoria": ["Trasferimento"],
-                "Descrizione": [descrizione_trf if descrizione_trf else f"Ricevuto da {contenitore_da}"],
-                "Importo": [importo_trf],
-                "Contenitore": [contenitore_a],
-                "Tipo": ["Trasferimento"],
-            })
-            df = pd.concat([df, riga_uscita, riga_entrata], ignore_index=True)
-            df.to_csv(DATA_FILE, index=False)
-            st.rerun()
+with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=True):
+    with st.sidebar.form("transfer_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            contenitore_da = st.selectbox("Da", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_from")
+        with col2:
+            contenitore_a = st.selectbox("A", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_to")
+        
+        importo_trf = st.number_input("Importo da trasferire (€)", min_value=0.01, step=1.00, key="transfer_amount")
+        descrizione_trf = st.text_input("Descrizione (opzionale)", placeholder="es. Prelievo contanti", key="transfer_desc")
+        
+        transfer_submitted = st.form_submit_button("🔄 Esegui Trasferimento")
+        
+        if transfer_submitted and importo_trf > 0:
+            if contenitore_da == contenitore_a:
+                st.error("❌ Non puoi trasferire soldi nello stesso contenitore!")
+            else:
+                riga_uscita = pd.DataFrame({
+                    "Data": [datetime.now().date()],
+                    "Categoria": ["Trasferimento"],
+                    "Descrizione": [descrizione_trf if descrizione_trf else f"Trasferito a {contenitore_a}"],
+                    "Importo": [-importo_trf],
+                    "Contenitore": [contenitore_da],
+                    "Tipo": ["Trasferimento"],
+                })
+                riga_entrata = pd.DataFrame({
+                    "Data": [datetime.now().date()],
+                    "Categoria": ["Trasferimento"],
+                    "Descrizione": [descrizione_trf if descrizione_trf else f"Ricevuto da {contenitore_da}"],
+                    "Importo": [importo_trf],
+                    "Contenitore": [contenitore_a],
+                    "Tipo": ["Trasferimento"],
+                })
+                df = pd.concat([df, riga_uscita, riga_entrata], ignore_index=True)
+                df.to_csv(DATA_FILE, index=False)
+                st.rerun()
 
 # --- SIDEBAR: GESTIONE RICORRENZE (aggiornata con TipoMovimento) ---
 st.sidebar.divider()
