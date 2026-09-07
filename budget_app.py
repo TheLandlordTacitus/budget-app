@@ -53,7 +53,7 @@ else:
     if "RatePagate" not in df_rec.columns:
         df_rec["RatePagate"] = 0
 
-# --- Funzione per applicare le ricorrenze (supporta anche le Rate) ---
+# --- Funzione per applicare le ricorrenze ---
 def applica_ricorrenze():
     oggi = datetime.now().date()
     modifiche = False
@@ -62,7 +62,6 @@ def applica_ricorrenze():
         if not row["Attiva"]:
             continue
         
-        # --- RICORRENZA NORMALE ---
         if row["TipoRicorrenza"] == "Normale":
             giorno = int(row["Giorno"])
             if giorno == 31:
@@ -96,7 +95,6 @@ def applica_ricorrenze():
             df.loc[len(df)] = nuova_riga.iloc[0]
             modifiche = True
         
-        # --- RICORRENZA A RATE ---
         elif row["TipoRicorrenza"] == "Rate":
             if row["RatePagate"] >= row["RateTotali"]:
                 continue
@@ -124,7 +122,7 @@ def applica_ricorrenze():
                     continue
                 
                 importo_rata = abs(row["Importo"]) / row["RateTotali"]
-                if row["TipoMovimento"] == "Entrata (+)":
+                if row["TipoMovimento"] == "Entrata (+)" :
                     importo_effettivo = importo_rata
                 else:
                     importo_effettivo = -importo_rata
@@ -150,8 +148,9 @@ def applica_ricorrenze():
 if applica_ricorrenze():
     st.toast("📅 Ricorrenze del giorno aggiunte!", icon="✅")
 
-# --- SIDEBAR ---
-
+# =============================================================================
+# SIDEBAR
+# =============================================================================
 st.sidebar.markdown("# 💰 Menù Principale")
 
 # --- 1. Inserisci Movimento ---
@@ -227,7 +226,6 @@ with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=True):
 # --- 3. Spese/Entrate Ricorrenti + Rate ---
 with st.sidebar.expander("🗓️ Spese/Entrate Ricorrenti", expanded=False):
     
-    # Sottomenu: Aggiungi Ricorrenza Normale
     with st.expander("➕ Aggiungi ricorrenza normale", expanded=False):
         with st.form("new_recurring"):
             nome_rec = st.text_input("Nome (es. Affitto, Stipendio, Netflix)")
@@ -266,7 +264,6 @@ with st.sidebar.expander("🗓️ Spese/Entrate Ricorrenti", expanded=False):
                 df_rec.to_csv(RECURRING_FILE, index=False)
                 st.rerun()
     
-    # Sottomenu: Aggiungi Rate
     with st.expander("📅 Aggiungi pagamento a rate", expanded=False):
         with st.form("new_rate"):
             nome_rate = st.text_input("Nome (es. PayPal 3 rate, TV rate)")
@@ -307,7 +304,6 @@ with st.sidebar.expander("🗓️ Spese/Entrate Ricorrenti", expanded=False):
                 df_rec.to_csv(RECURRING_FILE, index=False)
                 st.rerun()
     
-    # --- Mostra le ricorrenze esistenti ---
     if not df_rec.empty:
         st.sidebar.subheader("📋 Le tue ricorrenze")
         for idx, row in df_rec.iterrows():
@@ -335,7 +331,9 @@ with st.sidebar.expander("🗓️ Spese/Entrate Ricorrenti", expanded=False):
     else:
         st.sidebar.info("Nessuna ricorrenza.")
 
-# --- DASHBOARD PRINCIPALE ---
+# =============================================================================
+# DASHBOARD PRINCIPALE
+# =============================================================================
 saldo_attuale = df["Importo"].sum()
 spese_totali = df[df["Importo"] < 0]["Importo"].sum()
 entrate_totali = df[df["Importo"] > 0]["Importo"].sum()
@@ -363,11 +361,131 @@ if not saldo_contenitore.empty:
 else:
     st.info("Non hai ancora movimenti.")
 
+# =============================================================================
+# 🆕 PREVISIONE CONTO MESE PROSSIMO
+# =============================================================================
+st.divider()
+st.subheader("📆 Previsione Conto Mese Prossimo")
+
+def calcola_previsione_mese_prossimo():
+    oggi = datetime.now().date()
+    
+    # Calcola il mese successivo
+    if oggi.month == 12:
+        anno_target = oggi.year + 1
+        mese_target = 1
+    else:
+        anno_target = oggi.year
+        mese_target = oggi.month + 1
+    
+    # Calcola il saldo attuale
+    saldo_corrente = df["Importo"].sum()
+    
+    # Calcola il totale delle ricorrenze che cadono nel mese successivo
+    totale_mese = 0
+    dettagli = {"spese": [], "entrate": []}
+    
+    for _, row in df_rec.iterrows():
+        if not row["Attiva"]:
+            continue
+        
+        if row["TipoRicorrenza"] == "Normale":
+            giorno = int(row["Giorno"])
+            ultimo_giorno = calendar.monthrange(anno_target, mese_target)[1]
+            if giorno > ultimo_giorno:
+                giorno_effettivo = ultimo_giorno
+            else:
+                giorno_effettivo = giorno
+            data_rata = datetime(anno_target, mese_target, giorno_effettivo).date()
+            # Se la data è già passata, non la contiamo
+            if data_rata < oggi:
+                continue
+            
+            importo = abs(row["Importo"])
+            if row["TipoMovimento"] == "Entrata (+)":
+                totale_mese += importo
+                dettagli["entrate"].append(f"{row['Nome']}: +€{importo:.2f}")
+            else:
+                totale_mese -= importo
+                dettagli["spese"].append(f"{row['Nome']}: -€{importo:.2f}")
+        
+        elif row["TipoRicorrenza"] == "Rate":
+            if row["RatePagate"] >= row["RateTotali"]:
+                continue
+            data_inizio = pd.to_datetime(row["DataInizio"]).date()
+            rate_totali = int(row["RateTotali"])
+            rate_pagate = int(row["RatePagate"])
+            importo_rata = abs(row["Importo"]) / rate_totali
+            
+            # Itera su tutte le rate rimanenti
+            for i in range(rate_pagate, rate_totali):
+                anno_rata = data_inizio.year
+                mese_rata = data_inizio.month + i
+                while mese_rata > 12:
+                    mese_rata -= 12
+                    anno_rata += 1
+                giorno_rata = data_inizio.day
+                ultimo_giorno_rata = calendar.monthrange(anno_rata, mese_rata)[1]
+                if giorno_rata > ultimo_giorno_rata:
+                    giorno_rata = ultimo_giorno_rata
+                data_rata = datetime(anno_rata, mese_rata, giorno_rata).date()
+                
+                if data_rata.year == anno_target and data_rata.month == mese_target:
+                    if data_rata < oggi:
+                        continue
+                    if row["TipoMovimento"] == "Entrata (+)":
+                        totale_mese += importo_rata
+                        dettagli["entrate"].append(f"Rata {row['Nome']}: +€{importo_rata:.2f}")
+                    else:
+                        totale_mese -= importo_rata
+                        dettagli["spese"].append(f"Rata {row['Nome']}: -€{importo_rata:.2f}")
+                    break
+    
+    saldo_previsto = saldo_corrente + totale_mese
+    return saldo_previsto, saldo_corrente, totale_mese, dettagli, anno_target, mese_target
+
+saldo_previsto, saldo_corrente, totale_mese, dettagli, anno_target, mese_target = calcola_previsione_mese_prossimo()
+nome_mese = calendar.month_name[mese_target]
+
+# Mostra il saldo previsto in grande
+st.markdown(f"### 💰 Saldo previsto per **{nome_mese} {anno_target}**")
+st.markdown(f"## € {saldo_previsto:,.2f}")
+
+# Mostra le spese e le entrate previste in colonne
+col_spese, col_entrate = st.columns(2)
+
+with col_spese:
+    st.markdown("#### 🔴 Spese previste")
+    if dettagli["spese"]:
+        for spesa in dettagli["spese"]:
+            st.markdown(f"<span style='color:red; font-size:0.9em;'>- {spesa}</span>", unsafe_allow_html=True)
+        totale_spese = sum([float(s.split(": -€")[1].replace(")", "")) for s in dettagli["spese"] if ": -€" in s])
+        st.markdown(f"<span style='color:red; font-weight:bold;'>Totale spese: -€ {totale_spese:.2f}</span>", unsafe_allow_html=True)
+    else:
+        st.info("Nessuna spesa prevista")
+
+with col_entrate:
+    st.markdown("#### 🟢 Entrate previste")
+    if dettagli["entrate"]:
+        for entrata in dettagli["entrate"]:
+            st.markdown(f"<span style='color:green; font-size:0.9em;'>+ {entrata}</span>", unsafe_allow_html=True)
+        totale_entrate = sum([float(e.split(": +€")[1].replace(")", "")) for e in dettagli["entrate"] if ": +€" in e])
+        st.markdown(f"<span style='color:green; font-weight:bold;'>Totale entrate: +€ {totale_entrate:.2f}</span>", unsafe_allow_html=True)
+    else:
+        st.info("Nessuna entrata prevista")
+
+# Mostra un riepilogo testuale
+if totale_mese > 0:
+    st.caption(f"📈 Saldo in miglioramento di +€ {totale_mese:.2f} rispetto al mese corrente.")
+elif totale_mese < 0:
+    st.caption(f"📉 Saldo in peggioramento di -€ {abs(totale_mese):.2f} rispetto al mese corrente.")
+else:
+    st.caption("⏸️ Nessuna variazione prevista rispetto al mese corrente.")
+
 # --- ANALISI PER TIPO (storiche) ---
 st.divider()
 st.subheader("📊 Analisi per Tipo (spese già sostenute)")
 
-# Spese storiche - grafico a torta e barre
 spese_df = df[df["Importo"] < 0]
 if not spese_df.empty:
     spese_tipo = spese_df.groupby("Tipo")["Importo"].sum().abs().reset_index()
@@ -386,14 +504,13 @@ if not spese_df.empty:
 else:
     st.info("Nessuna spesa registrata.")
 
-# --- SPESE RICORRENTI DEL MESE SUCCESSIVO (FUNZIONE CORRETTA) ---
+# --- SPESE RICORRENTI DEL MESE SUCCESSIVO (grafico a torta) ---
 st.divider()
 st.subheader("📅 Spese Ricorrenti del Mese Prossimo")
 
 def calcola_spese_mese_successivo():
     oggi = datetime.now().date()
     
-    # Calcola il mese successivo a oggi
     if oggi.month == 12:
         anno_target = oggi.year + 1
         mese_target = 1
@@ -430,7 +547,6 @@ def calcola_spese_mese_successivo():
             rate_pagate = int(row["RatePagate"])
             importo_rata = abs(row["Importo"]) / rate_totali
             
-            # Itera su tutte le rate rimanenti per vedere se una cade nel mese target
             for i in range(rate_pagate, rate_totali):
                 anno_rata = data_inizio.year
                 mese_rata = data_inizio.month + i
@@ -448,7 +564,7 @@ def calcola_spese_mese_successivo():
                         continue
                     tipo = row["Tipo"] if row["Tipo"] else "Generico"
                     spese_mese[tipo] = spese_mese.get(tipo, 0) + importo_rata
-                    break  # Solo una rata al mese per questa ricorrenza
+                    break
     
     if spese_mese:
         df_ret = pd.DataFrame(list(spese_mese.items()), columns=["Tipo", "Importo"])
@@ -481,11 +597,10 @@ if not entrate_df.empty:
 else:
     st.info("Nessuna entrata registrata.")
 
-# --- PROIEZIONE FUTURA (FUNZIONE CORRETTA) ---
+# --- PROIEZIONE FUTURA (basata su ricorrenze programmate) ---
 st.divider()
 st.subheader("⏳ Proiezione Futura (Runway)")
 
-# Calcolo del burn rate storico (per i messaggi di avviso)
 ultimo_mese = df[df["Data"] >= (datetime.now().date() - timedelta(days=30))]
 spesa_giornaliera_media = abs(ultimo_mese[ultimo_mese["Importo"] < 0]["Importo"].mean())
 if pd.isna(spesa_giornaliera_media): spesa_giornaliera_media = 0
@@ -508,7 +623,6 @@ def calcola_proiezione_ricorrenze(mesi=12):
     proiezione = [{"Mese": 0, "Saldo Previsto": saldo}]
     
     for mese_offset in range(1, mesi + 1):
-        # Calcola l'anno e mese target
         anno = oggi.year
         mese = oggi.month + mese_offset
         while mese > 12:
@@ -521,7 +635,6 @@ def calcola_proiezione_ricorrenze(mesi=12):
             if not row["Attiva"]:
                 continue
             
-            # RICORRENZA NORMALE
             if row["TipoRicorrenza"] == "Normale":
                 giorno = int(row["Giorno"])
                 if giorno == 31:
@@ -529,15 +642,11 @@ def calcola_proiezione_ricorrenze(mesi=12):
                     giorno = ultimo_giorno
                 if giorno > calendar.monthrange(anno, mese)[1]:
                     giorno = calendar.monthrange(anno, mese)[1]
-                # Costruisci la data della ricorrenza in questo mese
-                data_rata = datetime(anno, mese, giorno).date()
-                # Se la data è già passata (solo se mese_offset == 0, ma partiamo da 1)
                 if row["TipoMovimento"] == "Entrata (+)":
                     totale_mese += abs(row["Importo"])
                 else:
                     totale_mese -= abs(row["Importo"])
             
-            # RICORRENZA A RATE
             elif row["TipoRicorrenza"] == "Rate":
                 if row["RatePagate"] >= row["RateTotali"]:
                     continue
@@ -546,7 +655,6 @@ def calcola_proiezione_ricorrenze(mesi=12):
                 rate_pagate = int(row["RatePagate"])
                 importo_rata = abs(row["Importo"]) / rate_totali
                 
-                # Itera sulle rate rimanenti e controlla se qualcuna cade in questo mese
                 for i in range(rate_pagate, rate_totali):
                     anno_rata = data_inizio.year
                     mese_rata = data_inizio.month + i
@@ -560,12 +668,11 @@ def calcola_proiezione_ricorrenze(mesi=12):
                     data_rata = datetime(anno_rata, mese_rata, giorno_rata).date()
                     
                     if data_rata.year == anno and data_rata.month == mese:
-                        # Se la data è già passata nel mese corrente (non si verifica per mese_offset>0)
                         if row["TipoMovimento"] == "Entrata (+)":
                             totale_mese += importo_rata
                         else:
                             totale_mese -= importo_rata
-                        break  # Solo una rata per questo mese
+                        break
         
         saldo += totale_mese
         proiezione.append({"Mese": mese_offset, "Saldo Previsto": max(0, saldo)})
