@@ -154,7 +154,7 @@ if applica_ricorrenze():
 st.sidebar.markdown("# 💰 Menù Principale")
 
 # --- 1. Inserisci Movimento ---
-with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
+with st.sidebar.expander("➕ Inserisci Movimento", expanded=False):
     with st.form("new_transaction"):
         col1, col2 = st.columns(2)
         with col1:
@@ -186,7 +186,7 @@ with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
             st.rerun()
 
 # --- 2. Trasferimento tra Conti ---
-with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=True):
+with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=False):
     with st.form("transfer_form"):
         col1, col2 = st.columns(2)
         with col1:
