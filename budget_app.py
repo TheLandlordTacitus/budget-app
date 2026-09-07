@@ -93,11 +93,9 @@ if applica_ricorrenze():
     st.toast("📅 Ricorrenze del giorno aggiunte!", icon="✅")
 
 # --- SIDEBAR: INPUT MOVIMENTO ---
-st.sidebar.divider()
-st.sidebar.header("➕ Inserisci Movimento")
-
-with st.sidebar.expander("➕ Inserisci Movimento", expanded=False):
-    with st.sidebar.form("new_transaction"):
+# ✅ VERSIONE CORRETTA
+with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
+    with st.form("new_transaction"):   # <-- NON usare st.sidebar.form
         col1, col2 = st.columns(2)
         with col1:
             tipo_mov = st.selectbox("Tipo", ["Uscita (-)", "Entrata (+)"])
