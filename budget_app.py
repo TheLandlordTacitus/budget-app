@@ -2,7 +2,7 @@
 # SIDEBAR COMPLETAMENTE ORGANIZZATA CON MENU A TENDINA
 # =============================================================================
 
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)  # Opzionale: icona in alto
+# st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)  # Opzionale: icona in alto
 st.sidebar.title("💰 Menù Principale")
 
 # -----------------------------------------------------------------------------
