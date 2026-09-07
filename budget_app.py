@@ -126,9 +126,8 @@ with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):
             st.rerun()
 
 # --- SIDEBAR: TRASFERIMENTO ---
-st.sidebar.divider()
 with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=True):
-    with st.sidebar.form("transfer_form"):
+    with st.form("transfer_form"):   # <-- SENZA st.sidebar.
         col1, col2 = st.columns(2)
         with col1:
             contenitore_da = st.selectbox("Da", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_from")
