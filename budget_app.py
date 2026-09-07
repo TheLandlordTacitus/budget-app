@@ -18,7 +18,7 @@ with st.sidebar.expander("➕ Inserisci Movimento", expanded=True):  # expanded=
         
         categoria = st.text_input("Categoria (es. Affitto, Ristorante)")
         descrizione = st.text_input("Descrizione")
-        contenitore = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
+        contenitore = st.selectbox("Contenitore", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"])
         tipo_personalizzato = st.text_input("Tipo (es. Necessaria, Extra, Fissa, Stipendio, ...)", placeholder="Inserisci un tipo a piacere")
         
         submitted = st.form_submit_button("Aggiungi")
@@ -46,9 +46,9 @@ with st.sidebar.expander("🔄 Trasferisci tra Conti", expanded=False):
     with st.form("transfer_form"):
         col1, col2 = st.columns(2)
         with col1:
-            contenitore_da = st.selectbox("Da", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_from")
+            contenitore_da = st.selectbox("Da", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"], key="transfer_from")
         with col2:
-            contenitore_a = st.selectbox("A", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"], key="transfer_to")
+            contenitore_a = st.selectbox("A", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"], key="transfer_to")
         
         importo_trf = st.number_input("Importo da trasferire (€)", min_value=0.01, step=1.00, key="transfer_amount")
         descrizione_trf = st.text_input("Descrizione (opzionale)", placeholder="es. Prelievo contanti", key="transfer_desc")
@@ -93,7 +93,7 @@ with st.sidebar.expander("🗓️ Spese/Entrate Ricorrenti", expanded=False):
                 tipo_mov_rec = st.selectbox("Tipo movimento", ["Uscita (-)", "Entrata (+)"])
             
             categoria_rec = st.text_input("Categoria")
-            contenitore_rec = st.selectbox("Contenitore", ["Contanti", "Conto Fineco", "Conto Revolut", "Spiccioli"])
+            contenitore_rec = st.selectbox("Contenitore", ["Contanti", "Conto Banca 1", "Conto Banca 2", "Spiccioli"])
             tipo_rec = st.text_input("Tipo personalizzato (es. Fissa, Extra, Stipendio)", placeholder="Inserisci un tipo")
             giorno_rec = st.number_input("Giorno del mese (1-31)", min_value=1, max_value=31, value=1, step=1)
             st.caption("💡 Usa 31 per l'ultimo giorno del mese")
