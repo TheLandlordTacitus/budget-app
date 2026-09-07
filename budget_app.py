@@ -485,7 +485,7 @@ else:
     st.info(f"📭 Nessuna spesa ricorrente programmata per il mese di {calendar.month_name[mese_target]} {anno_target}.")
 # --- ENTRATE (storiche) a torta ---
 st.divider()
-st.subheader("📊 Storico Entrate")
+st.subheader("📊 Entrate (storiche)")
 entrate_df = df[df["Importo"] > 0]
 if not entrate_df.empty:
     entrate_tipo = entrate_df.groupby("Tipo")["Importo"].sum().reset_index()
