@@ -312,14 +312,14 @@ else:
     st.info("Non hai abbastanza dati per il calcolo.")
 
 # --- TABELLA CRONOLOGIA ---
-# --- TABELLE ENTRATE E USCITE SEPARATE ---
+# --- TABELLE ENTRATE E USCITE SEPARATE CON COLORI ---
 st.divider()
 st.subheader("📋 Entrate")
 entrate_df = df[df["Importo"] > 0].sort_values("Data", ascending=False)
 if not entrate_df.empty:
-    # Applico il colore verde alla colonna Importo
+    # Colore verde per gli importi positivi (entrate)
     st.dataframe(
-        entrate_df.style.applymap(lambda v: 'color: green' if v > 0 else '', subset=['Importo']),
+        entrate_df.style.map(lambda v: 'color: green' if v > 0 else '', subset=['Importo']),
         use_container_width=True
     )
 else:
@@ -328,14 +328,13 @@ else:
 st.subheader("📋 Uscite")
 uscite_df = df[df["Importo"] < 0].sort_values("Data", ascending=False)
 if not uscite_df.empty:
-    # Applico il colore rosso alla colonna Importo
+    # Colore rosso per gli importi negativi (uscite)
     st.dataframe(
-        uscite_df.style.applymap(lambda v: 'color: red' if v < 0 else '', subset=['Importo']),
+        uscite_df.style.map(lambda v: 'color: red' if v < 0 else '', subset=['Importo']),
         use_container_width=True
     )
 else:
     st.info("Nessuna uscita registrata.")
-
 # --- RESET ---
 if st.button("🗑️ Cancella tutti i dati e ricomincia"):
     if os.path.exists(DATA_FILE):
