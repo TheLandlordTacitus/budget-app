@@ -312,14 +312,16 @@ else:
     st.info("Non hai abbastanza dati per il calcolo.")
 
 # --- TABELLA CRONOLOGIA ---
-# --- TABELLE ENTRATE E USCITE SEPARATE CON COLORI ---
+# --- TABELLE ENTRATE E USCITE SEPARATE CON COLORI E DUE DECIMALI ---
 st.divider()
 st.subheader("📋 Entrate")
 entrate_df = df[df["Importo"] > 0].sort_values("Data", ascending=False)
 if not entrate_df.empty:
-    # Colore verde per gli importi positivi (entrate)
+    # Colore verde per gli importi positivi e formato a 2 decimali
     st.dataframe(
-        entrate_df.style.map(lambda v: 'color: green' if v > 0 else '', subset=['Importo']),
+        entrate_df.style
+        .map(lambda v: 'color: green' if v > 0 else '', subset=['Importo'])
+        .format("€ {:.2f}", subset=['Importo']),  # <- DUE DECIMALI
         use_container_width=True
     )
 else:
@@ -328,9 +330,11 @@ else:
 st.subheader("📋 Uscite")
 uscite_df = df[df["Importo"] < 0].sort_values("Data", ascending=False)
 if not uscite_df.empty:
-    # Colore rosso per gli importi negativi (uscite)
+    # Colore rosso per gli importi negativi e formato a 2 decimali
     st.dataframe(
-        uscite_df.style.map(lambda v: 'color: red' if v < 0 else '', subset=['Importo']),
+        uscite_df.style
+        .map(lambda v: 'color: red' if v < 0 else '', subset=['Importo'])
+        .format("{:.2f}", subset=['Importo']),  # <- DUE DECIMALI
         use_container_width=True
     )
 else:
