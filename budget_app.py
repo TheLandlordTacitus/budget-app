@@ -465,11 +465,13 @@ def calcola_spese_mese_successivo():
                 spese_mese[tipo] = spese_mese.get(tipo, 0) + importo_rata
     
     if spese_mese:
-        return pd.DataFrame(list(spese_mese.items()), columns=["Tipo", "Importo"])
+        df = pd.DataFrame(list(spese_mese.items()), columns=["Tipo", "Importo"])
+        return df, anno_target, mese_target
     else:
-        return None
+        return None, anno_target, mese_target
 
-df_mese_successivo = calcola_spese_mese_successivo()
+# Chiamata alla funzione (ora restituisce anche i valori target)
+df_mese_successivo, anno_target, mese_target = calcola_spese_mese_successivo()
 
 if df_mese_successivo is not None and not df_mese_successivo.empty:
     # Mostra solo il grafico a torta
